@@ -1,0 +1,33 @@
+{
+    "gitAngular.scopes": [
+        "bundle",
+        "cognito",
+        "command",
+        "command:create",
+        "command:dependencies",
+        "command:grant_api",
+        "command:invoke",
+        "command:layer",
+        "command:list",
+        "command:release",
+        "command:runtime",
+        "command:test",
+        "command:update",
+        "layers",
+        "path",
+        "pipeline"
+    ],
+    "python.analysis.extraPaths": [
+        "./arcimoto_aws_services",
+        "./arcimoto_aws_services/arcimoto_aws_services",
+        "./arcimoto_aws_services/tests"
+    ],
+    "python.autoComplete.extraPaths": [
+        "./arcimoto_aws_services",
+        "./arcimoto_aws_services/arcimoto_aws_services",
+        "./arcimoto_aws_services/tests"
+    ],
+    "python.linting.enabled": true,
+    "python.linting.pycodestyleEnabled": true,
+    "python.linting.pylintEnabled": false
+}

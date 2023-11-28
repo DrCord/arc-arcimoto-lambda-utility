@@ -1,0 +1,3 @@
+[submodule "arcimoto_aws_services"]
+	path = arcimoto_aws_services
+	url = git@bitbucket.org:arcimotocode1/arcimoto-aws-services.git

@@ -1,0 +1,17 @@
+.DS_Store
+*.pyc
+build
+env
+lambda.zip
+node_modules
+payload.json
+/test-reports
+# pip development installation files
+*.egg-info
+# files automatically created (and deleted) during unit test runs
+## json config files and schema config files
+bundle*.json
+dependencies*.json
+test_archive.zip
+alu_unit_test*.py
+linting_flake8.txt

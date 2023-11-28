@@ -1,0 +1,204 @@
+image: python:3.9.15
+
+definitions:
+  steps:
+    - step: &build-fail-if-any-test-failures
+        name: Fail Build if Any Test Failures
+        script:
+          # fail the build if any unit test failures/errors in xml unittest output folder
+          - |
+            if [ ! -z "$(ls -A tests-output)" ]; then
+              for file in tests-output/*; do
+                if [ "$(grep -c '<failure\|<error' "${file}")" -gt 0 ]; then
+                  exit 1
+                fi
+              done
+            fi
+    - step: &email-release-complete-dev
+        name: Send Completion Email - Dev Release
+        caches:
+          - docker
+        script:
+          - BB_LINK="https://bitbucket.org/${BITBUCKET_WORKSPACE}/${BITBUCKET_REPO_SLUG}/"
+          - HEADER="#Arcimoto Lambda Utility Release to Dev Complete"
+          - CONTENT="The pipeline for a merge to the \`dev\` branch for the \`arcimoto-lambda-utility\` repo has completed."
+          - BUILD_LINK="[Pipeline Execution ${BITBUCKET_BUILD_NUMBER}](${BB_LINK}/addon/pipelines/home#!/results/${BITBUCKET_BUILD_NUMBER})"
+          - printf "$HEADER\n\n$CONTENT\n\n$BUILD_LINK" | docker run -i datafolklabs/markdown > email_body.html
+          - pipe: atlassian/email-notify:0.8.0
+            variables:
+              USERNAME: $SES_SMTP_USERNAME
+              PASSWORD: $SES_SMTP_PASSWORD
+              FROM: no-reply@arcimoto.com
+              TO: arcimoto-lambda-utility-release-dev@arcimoto.com
+              SUBJECT: Arcimoto Lambda Utility - Release to Dev Complete
+              HOST: email-smtp.us-west-2.amazonaws.com
+              BODY_HTML: email_body.html
+    - step: &email-release-complete-prod
+        name: Send Completion Email - Production Release
+        caches:
+          - docker
+          - pip
+        script:
+          # add root user installed python packages to system path
+          - export PATH=$PATH:/root/.local/bin
+          # install pip packages with --user flag to auto-cache
+          - pip install --user -r requirements.txt
+          # use CI programatic user with git ssh origin
+          - git remote set-url origin ${BITBUCKET_GIT_SSH_ORIGIN}
+          - git config --global advice.detachedHead false
+          - git fetch
+          - git checkout origin/master
+          # create email content
+          - VERSION=$([[semantic-release print-version]] && semantic-release print-version || semantic-release print-version --current)
+          - BB_LINK="https://bitbucket.org/${BITBUCKET_WORKSPACE}/${BITBUCKET_REPO_SLUG}/"
+          - HEADER="#Arcimoto Lambda Utility v${VERSION} Release to Production Complete"
+          - CONTENT="The pipeline for a merge to the \`master\` branch for the \`arcimoto-lambda-utility\` repo has completed."
+          - BUILD_LINK="[Pipeline Execution ${BITBUCKET_BUILD_NUMBER}](${BB_LINK}/addon/pipelines/home#!/results/${BITBUCKET_BUILD_NUMBER})"
+          - printf "$HEADER\n\n$CONTENT\n\n$BUILD_LINK" | docker run -i datafolklabs/markdown > email_body.html
+          - pipe: atlassian/email-notify:0.8.0
+            variables:
+              USERNAME: $SES_SMTP_USERNAME
+              PASSWORD: $SES_SMTP_PASSWORD
+              FROM: no-reply@arcimoto.com
+              TO: arcimoto-lambda-utility-release@arcimoto.com
+              SUBJECT: Arcimomto Lambda Utility v${VERSION} - Release to Production Complete
+              HOST: email-smtp.us-west-2.amazonaws.com
+              BODY_HTML: email_body.html
+              ATTACHMENTS: CHANGELOG.md
+    - step: &email-release-complete-staging
+        name: Send Completion Email - Staging Release
+        caches:
+          - docker
+        script:
+          - BB_LINK="https://bitbucket.org/${BITBUCKET_WORKSPACE}/${BITBUCKET_REPO_SLUG}/"
+          - HEADER="#Arcimoto Lambda Utility Release to Staging Complete"
+          - CONTENT="The pipeline for a merge to the \`staging\` branch for the \`arcimoto-lambda-utility\` repo has completed."
+          - BUILD_LINK="[Pipeline Execution ${BITBUCKET_BUILD_NUMBER}](${BB_LINK}/addon/pipelines/home#!/results/${BITBUCKET_BUILD_NUMBER})"
+          - printf "$HEADER\n\n$CONTENT\n\n$BUILD_LINK" | docker run -i datafolklabs/markdown > email_body.html
+          - pipe: atlassian/email-notify:0.8.0
+            variables:
+              USERNAME: $SES_SMTP_USERNAME
+              PASSWORD: $SES_SMTP_PASSWORD
+              FROM: no-reply@arcimoto.com
+              TO: arcimoto-lambda-utility-release-staging@arcimoto.com
+              SUBJECT: Arcimoto Lambda Utility - Release to Staging Complete
+              HOST: email-smtp.us-west-2.amazonaws.com
+              BODY_HTML: email_body.html
+    - step: &email-tests-complete
+        name: Send Tests Completion Email
+        caches:
+          - docker
+        script:
+          # count failures
+          - failures=0
+          - |
+            for file in tests-output/*; do
+              failures=$((failures+"$(grep -l '<failure\|<error' "${file}" | wc -l)"))
+            done
+          # zip up tests-output for attachment
+          - python -c "import shutil;shutil.make_archive('test-reports','zip',root_dir='.', base_dir='tests-output')"
+          # create email pieces
+          - SUBJECT="Arcimoto Lambda Utility - Tests Complete for Pull Request ${BITBUCKET_PR_ID} - "
+          - email=$(git log --format='%ae' ${BITBUCKET_COMMIT}^!)
+          - HEADER="#Arcimoto Lambda Utility Tests Complete - "
+          - |
+            if [ "$failures" -eq "0" ]; then
+              SUBJECT="${SUBJECT}Success"
+              HEADER="${HEADER}Success"
+            else
+              SUBJECT="${SUBJECT}Failure"
+              HEADER="${HEADER}Failure"
+            fi
+          - CONTENT="The pipeline running tests for the \`arcimoto-lambda-utility\` repo has completed."
+          - FAILURES="###Test Failures - ${failures}"
+          - BB_LINK="https://bitbucket.org/${BITBUCKET_WORKSPACE}/${BITBUCKET_REPO_SLUG}/"
+          - BUILD_LINK="- [Pipeline Execution ${BITBUCKET_BUILD_NUMBER}](${BB_LINK}/addon/pipelines/home#!/results/${BITBUCKET_BUILD_NUMBER})"
+          - PR_LINK="- [Pull Request ${BITBUCKET_PR_ID}](${BB_LINK}/pull-requests/${BITBUCKET_PR_ID})"
+          # assemble pieces into email
+          - printf "$HEADER\n\n$CONTENT\n\n$FAILURES\n\n$BUILD_LINK\n$PR_LINK" | docker run -i datafolklabs/markdown > email_body.html
+          # send email
+          - pipe: atlassian/email-notify:0.8.0
+            variables:
+              USERNAME: $SES_SMTP_USERNAME
+              PASSWORD: $SES_SMTP_PASSWORD
+              FROM: no-reply@arcimoto.com
+              TO: $email
+              SUBJECT: $SUBJECT
+              HOST: email-smtp.us-west-2.amazonaws.com
+              BODY_HTML: email_body.html
+              ATTACHMENTS: test-reports.zip
+    - step: &publish-new-semantic-release
+        name: Publish New Semantic Release
+        caches:
+          - pip
+        script:
+          # add root user installed python packages to system path
+          - export PATH=$PATH:/root/.local/bin
+          # install pip packages with --user flag to auto-cache
+          - pip install --user -r requirements.txt
+          # allow push using CI programatic user during semantic-release publish op by using git ssh origin
+          - git remote set-url origin ${BITBUCKET_GIT_SSH_ORIGIN}
+          # init and update git submodules
+          - git submodule update --init --recursive
+          # publish new release if warranted
+          - semantic-release publish
+          # rebase master onto staging and dev branches
+          - git fetch
+          - git checkout -b staging
+          - git merge origin/master
+          - git push
+          - git checkout -b dev
+          - git merge origin/master
+          - git push
+    - step: &tests-linting-flake8
+        # this will cause a step failure if there are any linting failures
+        name: Test - Linting - Flake8
+        caches:
+          - pip
+        script:
+          # add root user installed python packages to system path
+          - export PATH=$PATH:/root/.local/bin
+          # install pip packages with --user flag to auto-cache
+          - pip install --user -r requirements.txt
+          # run tests
+          - flake8 arcimoto_lambda_utility --max-line-length=180 --ignore=E501,W503,W504 >> linting_flake8.txt
+          - flake8 tests --max-line-length=180 --ignore=E501,W503,W504 >> linting_flake8.txt
+        artifacts:
+          - linting_flake8.txt
+    - step: &tests-unit-run
+        name: Unit Tests - Run
+        caches:
+          - pip
+        script:
+          # add root user installed python packages to system path
+          - export PATH=$PATH:/root/.local/bin
+          # install pip packages with --user flag to auto-cache
+          - pip install --user -r requirements.txt
+          # init and update git submodules
+          - git submodule init && git submodule update
+          # create tests output directory
+          - mkdir test-reports
+          # run tests
+          - python bitbucket-pipelines-tests-runner.py
+          # tests-output folder carried to other steps to prevent polution from tests auto-detection
+          - cp -a test-reports/. tests-output
+        artifacts:
+          - tests-output/**
+
+pipelines:
+  pull-requests:
+    'TEL-*':
+      - step: *tests-linting-flake8
+      - step: *tests-unit-run
+      - parallel: # finish
+        - step: *email-tests-complete
+        - step: *build-fail-if-any-test-failures
+
+  branches:
+    dev:
+      - step: *email-release-complete-dev
+    staging:
+      - step: *email-release-complete-staging
+    master:
+      - step: *publish-new-semantic-release
+      - step: *email-release-complete-prod
